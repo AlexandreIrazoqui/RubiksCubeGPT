@@ -100,11 +100,6 @@ def build_dataset(pairs):
     return torch.tensor(X, dtype=torch.long), torch.tensor(Y, dtype=torch.long)
 
 
-if MODE == "train":
-    train_X, train_Y = build_dataset(load_pairs("train.txt"))
-    val_X, val_Y = build_dataset(load_pairs("val.txt"))
-
-
 def get_batch(split):
     X, Y = (train_X, train_Y) if split == "train" else (val_X, val_Y)
     ix = torch.randint(len(X), (batch_size,))
@@ -242,44 +237,63 @@ class GPTLanguageModel(nn.Module):
             idx = torch.cat((idx, idx_next), dim=1)
         return idx
 
-
-model = GPTLanguageModel()
-m = model.to(device)
-
-# en mode generate on recharge les poids sauvegardes
-if MODE == "generate":
-    checkpoint = torch.load(checkpoint_path, map_location=device)
-    model.load_state_dict(checkpoint["model_state"])
-    print(f"Modele recharge depuis {checkpoint_path}")
-
-
-if MODE == "train":
-    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
-
-    for iter in range(max_iters):
-        if iter % eval_interval == 0:
-            losses = estimate_loss()
-            print(
-                f"step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}"
-            )
-        xb, yb = get_batch("train")
-
-        logits, loss = m(xb, yb)
-        optimizer.zero_grad(set_to_none=True)
-        loss.backward()
-        optimizer.step()
-
-    # sauvegarde du modele (+ le vocab pour pouvoir regenerer plus tard)
-    torch.save({"model_state": model.state_dict(), "vocab": vocab}, checkpoint_path)
-    print(f"Modele sauvegarde dans {checkpoint_path}")
+    @torch.no_grad()
+    def solve(self, scramble, max_new_token=60):
+        self.eval()
+        prefix = encode(scramble + ["<SEP>"])
+        idx = torch.tensor([prefix], dtype=torch.long, device=device)
+        generated = []
+        for _ in range(max_new_token):
+            idx_cond = idx[:, -block_size:]
+            logits, _ = self(idx_cond)
+            logits = logits[:, -1, :]
+            next_id = torch.argmax(
+                logits, dim=-1
+            )  # On veut le pluis probable quand on resoud -> deterministe
+            tok = itos[int(next_id.item())]
+            if tok == "<E>":
+                break
+            generated.append(tok)
+            idx = torch.cat((idx, next_id.view(1, 1)), dim=1)
+        return generated
 
 
-model.eval()
-context = torch.zeros((1, 1), dtype=torch.long, device=device)
-generated = decode(m.generate(context, max_new_token=num_generate_tokens)[0].tolist())
+def charger_modele(path=checkpoint_path):
+    """Reconstruit le GPT et recharge les poids sauvegardes (pour eval / sonde)."""
+    modele = GPTLanguageModel().to(device)
+    checkpoint = torch.load(path, map_location=device)
+    modele.load_state_dict(checkpoint["model_state"])
+    modele.eval()
+    return modele
 
-print(generated)
 
-with open(output_path, "w", encoding="utf_8") as f:
-    f.write(" ".join(generated))
-print(f"\n--- {num_generate_tokens} tokens ecrits dans {output_path} ---")
+if __name__ == "__main__":
+    model = GPTLanguageModel()
+    m = model.to(device)
+
+    if MODE == "generate":
+        model = charger_modele()
+        m = model
+        print(f"Modele recharge depuis {checkpoint_path}")
+
+    if MODE == "train":
+        train_X, train_Y = build_dataset(load_pairs("train.txt"))
+        val_X, val_Y = build_dataset(load_pairs("val.txt"))
+        optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
+
+        for iter in range(max_iters):
+            if iter % eval_interval == 0:
+                losses = estimate_loss()
+                print(
+                    f"step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}"
+                )
+            xb, yb = get_batch("train")
+
+            logits, loss = m(xb, yb)
+            optimizer.zero_grad(set_to_none=True)
+            loss.backward()
+            optimizer.step()
+
+        # sauvegarde du modele (+ le vocab pour pouvoir regenerer plus tard)
+        torch.save({"model_state": model.state_dict(), "vocab": vocab}, checkpoint_path)
+        print(f"Modele sauvegarde dans {checkpoint_path}")
