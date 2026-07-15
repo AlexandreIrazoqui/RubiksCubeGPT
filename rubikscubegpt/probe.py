@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from RubiksCubeGPT import charger_modele, encode, device
+from rubikscubegpt.model import charger_modele, encode, device
 
 LAYER = 4  # bloc dont on lit la sortie (0..n_layer-1)
 
@@ -55,7 +55,7 @@ def collecter_activations(modele, exemples):
     return A, Y
 
 
-def entrainer_sonde(A, Y, pas=300):
+def entrainer_sonde(A, Y, nb_classes, pas=300):
     """Sonde lineaire : une seule couche C -> nb_slots*nb_classes."""
     nb_slots = Y.shape[1]
     sonde = nn.Linear(A.shape[1], nb_slots * nb_classes).to(device)

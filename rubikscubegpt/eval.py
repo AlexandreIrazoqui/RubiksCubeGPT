@@ -1,7 +1,7 @@
 from collections import defaultdict
 
-from cube import cube_resolu, jouer_sequence, est_resolu
-from RubiksCubeGPT import charger_modele, load_pairs
+from rubikscubegpt.cube import cube_resolu, jouer_sequence, est_resolu
+from rubikscubegpt.model import charger_modele, load_pairs
 
 MOVES_VALIDES = set(f + s for f in "URFDLB" for s in ("", "'", "2"))
 

@@ -2,7 +2,7 @@ import kociemba
 import random
 import json
 
-from cube import (
+from rubikscubegpt.cube import (
     cube_resolu,
     appliquer,
     jouer_sequence,
